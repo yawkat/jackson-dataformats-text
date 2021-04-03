@@ -49,7 +49,7 @@ yybegin(EXPECT_EXPRESSION);
       stringBuilder.append((char) value);
   }
 
-  private void appendUnicodeEscapeLong() throws java.io.IOException {
+  private void appendUnicodeEscapeLong() {
      int value = (Character.digit(yycharat(2), 16) << 28) |
                  (Character.digit(yycharat(3), 16) << 24) |
                  (Character.digit(yycharat(4), 16) << 20) |

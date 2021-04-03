@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.io.UncheckedIOException;
+import com.fasterxml.jackson.databind.node.POJONode;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -21,6 +21,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.temporal.ChronoField;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
@@ -43,11 +46,7 @@ public class ComplianceValidTest {
                     String withoutSuffix = path.substring(0, path.length() - 5);
                     Path json = Paths.get(withoutSuffix + ".json");
                     if (Files.isRegularFile(json)) {
-                        try {
-                            return new Object[]{p, new JsonMapper().readTree(json.toFile())};
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
+                        return new Object[]{p, JsonMapper.shared().readTree(json)};
                     }
                     // can't parse inf values :(
                     /*
@@ -71,10 +70,10 @@ public class ComplianceValidTest {
     }
 
     @Test
-    public void test() throws IOException {
+    public void test() {
         JsonNode actual = TomlMapper.builder()
                 .enable(TomlReadFeature.PARSE_JAVA_TIME)
-                .build().readTree(path.toFile());
+                .build().readTree(path);
         Assert.assertEquals(mapFromComplianceNode(expected), actual);
     }
 

@@ -3,6 +3,7 @@ package com.fasterxml.jackson.dataformat.toml;
 import com.fasterxml.jackson.core.*;
 import com.fasterxml.jackson.core.base.GeneratorBase;
 import com.fasterxml.jackson.core.io.IOContext;
+import com.fasterxml.jackson.core.util.JacksonFeatureSet;
 import com.fasterxml.jackson.core.util.VersionUtil;
 
 import java.io.IOException;
@@ -78,8 +79,9 @@ final class TomlGenerator extends GeneratorBase {
     /**********************************************************************
      */
 
-    public TomlGenerator(IOContext ioCtxt, int stdFeatures, ObjectCodec codec, Writer out) {
-        super(stdFeatures, codec);
+    public TomlGenerator(ObjectWriteContext writeCtxt, IOContext ioCtxt,
+                         int stdFeatures, Writer out) {
+        super(writeCtxt, stdFeatures);
         _ioContext = ioCtxt;
         _streamWriteContext = TomlWriteContext.createRootContext();
         _out = out;
@@ -100,22 +102,42 @@ final class TomlGenerator extends GeneratorBase {
 
     /*
     /**********************************************************************
+    /* Overridden methods, configuration
+    /**********************************************************************
+     */
+
+    @Override
+    public Object streamWriteOutputTarget() {
+        return _out;
+    }
+
+    @Override
+    public int streamWriteOutputBuffered() {
+        return _outputTail;
+    }
+
+    /*
+    /**********************************************************************
     /* Overridden methods: low-level I/O
     /**********************************************************************
      */
 
     @Override
-    public void close() throws IOException {
+    public void close() {
         super.close();
         _flushBuffer();
         _outputTail = 0; // just to ensure we don't think there's anything buffered
 
         if (_out != null) {
-            if (_ioContext.isResourceManaged() || isEnabled(StreamWriteFeature.AUTO_CLOSE_TARGET)) {
-                _out.close();
-            } else if (isEnabled(StreamWriteFeature.FLUSH_PASSED_TO_STREAM)) {
-                // If we can't close it, we should at least flush
-                _out.flush();
+            try {
+                if (_ioContext.isResourceManaged() || isEnabled(StreamWriteFeature.AUTO_CLOSE_TARGET)) {
+                    _out.close();
+                } else if (isEnabled(StreamWriteFeature.FLUSH_PASSED_TO_STREAM)) {
+                    // If we can't close it, we should at least flush
+                    _out.flush();
+                }
+            } catch (IOException e) {
+                throw _wrapIOFailure(e);
             }
         }
         // Internal buffer(s) generator has can now be released as well
@@ -123,11 +145,15 @@ final class TomlGenerator extends GeneratorBase {
     }
 
     @Override
-    public void flush() throws IOException {
+    public void flush() {
         _flushBuffer();
         if (_out != null) {
             if (isEnabled(StreamWriteFeature.FLUSH_PASSED_TO_STREAM)) {
-                _out.flush();
+                try {
+                    _out.flush();
+                } catch (IOException e) {
+                    throw _wrapIOFailure(e);
+                }
             }
         }
     }
@@ -147,9 +173,13 @@ final class TomlGenerator extends GeneratorBase {
         }
     }
 
-    protected void _flushBuffer() throws IOException {
+    protected void _flushBuffer() throws JacksonException {
         if (_outputTail > 0) {
-            _out.write(_outputBuffer, 0, _outputTail);
+            try {
+                _out.write(_outputBuffer, 0, _outputTail);
+            } catch (IOException e) {
+                throw _wrapIOFailure(e);
+            }
             _outputTail = 0;
         }
     }
@@ -160,14 +190,14 @@ final class TomlGenerator extends GeneratorBase {
     /**********************************************************************
      */
 
-    protected void _writeRaw(char c) throws IOException {
+    protected void _writeRaw(char c) throws JacksonException {
         if (_outputTail >= _outputEnd) {
             _flushBuffer();
         }
         _outputBuffer[_outputTail++] = c;
     }
 
-    protected void _writeRaw(String text) throws IOException {
+    protected void _writeRaw(String text) throws JacksonException {
         // Nothing to check, can just output as is
         int len = text.length();
         int room = _outputEnd - _outputTail;
@@ -185,7 +215,7 @@ final class TomlGenerator extends GeneratorBase {
         }
     }
 
-    protected void _writeRaw(StringBuilder text) throws IOException {
+    protected void _writeRaw(StringBuilder text) throws JacksonException {
         // Nothing to check, can just output as is
         int len = text.length();
         int room = _outputEnd - _outputTail;
@@ -203,7 +233,7 @@ final class TomlGenerator extends GeneratorBase {
         }
     }
 
-    protected void _writeRaw(char[] text, int offset, int len) throws IOException {
+    protected void _writeRaw(char[] text, int offset, int len) throws JacksonException {
         // Only worth buffering if it's a short write?
         if (len < SHORT_WRITE) {
             int room = _outputEnd - _outputTail;
@@ -216,10 +246,14 @@ final class TomlGenerator extends GeneratorBase {
         }
         // Otherwise, better just pass through:
         _flushBuffer();
-        _out.write(text, offset, len);
+        try {
+            _out.write(text, offset, len);
+        } catch (IOException e) {
+            throw _wrapIOFailure(e);
+        }
     }
 
-    protected void _writeRawLong(String text) throws IOException {
+    protected void _writeRawLong(String text) throws JacksonException {
         int room = _outputEnd - _outputTail;
         text.getChars(0, room, _outputBuffer, _outputTail);
         _outputTail += room;
@@ -240,7 +274,7 @@ final class TomlGenerator extends GeneratorBase {
         _outputTail = len;
     }
 
-    protected void _writeRawLong(StringBuilder text) throws IOException {
+    protected void _writeRawLong(StringBuilder text) throws JacksonException {
         int room = _outputEnd - _outputTail;
         text.getChars(0, room, _outputBuffer, _outputTail);
         _outputTail += room;
@@ -268,13 +302,18 @@ final class TomlGenerator extends GeneratorBase {
      */
 
     @Override
+    public TokenStreamContext streamWriteContext() {
+        return _streamWriteContext;
+    }
+
+    @Override
     public Object currentValue() {
-        return _streamWriteContext.getCurrentValue();
+        return _streamWriteContext.currentValue();
     }
 
     @Override
     public void assignCurrentValue(Object v) {
-        _streamWriteContext.setCurrentValue(v);
+        _streamWriteContext.assignCurrentValue(v);
     }
 
     /*
@@ -293,6 +332,16 @@ final class TomlGenerator extends GeneratorBase {
         return false;
     }
 
+    @Override
+    public boolean canOmitProperties() {
+        return true;
+    }
+
+    @Override
+    public JacksonFeatureSet<StreamWriteCapability> streamWriteCapabilities() {
+        return DEFAULT_WRITE_CAPABILITIES;
+    }
+
     /*
     /**********************************************************************
     /* Overridden methods; writing property names
@@ -300,7 +349,7 @@ final class TomlGenerator extends GeneratorBase {
      */
 
     @Override
-    public void writeFieldName(String name) throws IOException {
+    public void writeName(String name) throws JacksonException {
         if (!_streamWriteContext.writeName(name)) {
             _reportError("Cannot write a property name, expecting a value");
         }
@@ -321,6 +370,12 @@ final class TomlGenerator extends GeneratorBase {
         }
     }
 
+    @Override
+    public void writePropertyId(long id) throws JacksonException {
+        // 15-Aug-2019, tatu: should be improved to avoid String generation
+        writeName(Long.toString(id));
+    }
+
     /*
     /**********************************************************************
     /* Public API: structural output
@@ -328,12 +383,12 @@ final class TomlGenerator extends GeneratorBase {
      */
 
     @Override
-    public void writeStartArray() throws IOException {
+    public void writeStartArray() throws JacksonException {
         writeStartArray(null);
     }
 
     @Override
-    public void writeStartArray(Object currValue) throws IOException {
+    public void writeStartArray(Object currValue) throws JacksonException {
         // arrays are always inline, force writing the current key
         // NOTE: if this ever changes, we need to add empty array handling in writeEndArray
         _verifyValueWrite("start an array", true);
@@ -345,7 +400,7 @@ final class TomlGenerator extends GeneratorBase {
     }
 
     @Override
-    public void writeEndArray() throws IOException {
+    public void writeEndArray() throws JacksonException {
         if (!_streamWriteContext.inArray()) {
             _reportError("Current context not an Array but " + _streamWriteContext.typeDesc());
         }
@@ -360,12 +415,12 @@ final class TomlGenerator extends GeneratorBase {
     }
 
     @Override
-    public void writeStartObject() throws IOException {
+    public void writeStartObject() throws JacksonException {
         writeStartObject(null);
     }
 
     @Override
-    public void writeStartObject(Object forValue) throws IOException {
+    public void writeStartObject(Object forValue) throws JacksonException {
         // objects aren't always materialized right now
         _verifyValueWrite("start an object", false);
         _streamWriteContext = _streamWriteContext.createChildObjectContext(forValue, _basePath.length());
@@ -375,7 +430,7 @@ final class TomlGenerator extends GeneratorBase {
     }
 
     @Override
-    public void writeEndObject() throws IOException {
+    public void writeEndObject() throws JacksonException {
         if (!_streamWriteContext.inObject()) {
             _reportError("Current context not an Ibject but " + _streamWriteContext.typeDesc());
         }
@@ -401,7 +456,7 @@ final class TomlGenerator extends GeneratorBase {
      */
 
     @Override
-    public void writeString(String text) throws IOException {
+    public void writeString(String text) throws JacksonException {
         if (text == null) {
             writeNull();
             return;
@@ -413,7 +468,7 @@ final class TomlGenerator extends GeneratorBase {
 
     @Override
     public void writeString(char[] text, int offset, int len)
-            throws IOException {
+            throws JacksonException {
         _verifyValueWrite("write String value");
         _writeStringImpl(StringOutputUtil.MASK_STRING, text, offset, len);
         writeValueEnd();
@@ -425,7 +480,7 @@ final class TomlGenerator extends GeneratorBase {
     }
 
     @Override
-    public void writeUTF8String(byte[] text, int offset, int len) throws IOException {
+    public void writeUTF8String(byte[] text, int offset, int len) throws JacksonException {
         writeString(new String(text, offset, len, StandardCharsets.UTF_8));
         writeValueEnd();
     }
@@ -437,27 +492,27 @@ final class TomlGenerator extends GeneratorBase {
      */
 
     @Override
-    public void writeRaw(String text) throws IOException {
+    public void writeRaw(String text) throws JacksonException {
         _writeRaw(text);
     }
 
     @Override
-    public void writeRaw(String text, int offset, int len) throws IOException {
+    public void writeRaw(String text, int offset, int len) throws JacksonException {
         _writeRaw(text.substring(offset, offset + len));
     }
 
     @Override
-    public void writeRaw(char[] text, int offset, int len) throws IOException {
+    public void writeRaw(char[] text, int offset, int len) throws JacksonException {
         _writeRaw(text, offset, len);
     }
 
     @Override
-    public void writeRaw(char c) throws IOException {
+    public void writeRaw(char c) throws JacksonException {
         _writeRaw(c);
     }
 
     @Override
-    public void writeRaw(SerializableString text) throws IOException {
+    public void writeRaw(SerializableString text) throws JacksonException {
         writeRaw(text.toString());
     }
 
@@ -469,7 +524,7 @@ final class TomlGenerator extends GeneratorBase {
 
     @Override
     public void writeBinary(Base64Variant b64variant, byte[] data, int offset, int len)
-            throws IOException {
+            throws JacksonException {
         if (data == null) {
             writeNull();
             return;
@@ -494,34 +549,34 @@ final class TomlGenerator extends GeneratorBase {
      */
 
     @Override
-    public void writeBoolean(boolean state) throws IOException {
+    public void writeBoolean(boolean state) throws JacksonException {
         _verifyValueWrite("write boolean value");
         _writeRaw(state ? "true" : "false");
         writeValueEnd();
     }
 
     @Override
-    public void writeNumber(short v) throws IOException {
+    public void writeNumber(short v) throws JacksonException {
         writeNumber((int) v);
         writeValueEnd();
     }
 
     @Override
-    public void writeNumber(int i) throws IOException {
+    public void writeNumber(int i) throws JacksonException {
         _verifyValueWrite("write number");
         _writeRaw(String.valueOf(i));
         writeValueEnd();
     }
 
     @Override
-    public void writeNumber(long l) throws IOException {
+    public void writeNumber(long l) throws JacksonException {
         _verifyValueWrite("write number");
         _writeRaw(String.valueOf(l));
         writeValueEnd();
     }
 
     @Override
-    public void writeNumber(BigInteger v) throws IOException {
+    public void writeNumber(BigInteger v) throws JacksonException {
         if (v == null) {
             writeNull();
             return;
@@ -532,21 +587,21 @@ final class TomlGenerator extends GeneratorBase {
     }
 
     @Override
-    public void writeNumber(double d) throws IOException {
+    public void writeNumber(double d) throws JacksonException {
         _verifyValueWrite("write number");
         _writeRaw(String.valueOf(d));
         writeValueEnd();
     }
 
     @Override
-    public void writeNumber(float f) throws IOException {
+    public void writeNumber(float f) throws JacksonException {
         _verifyValueWrite("write number");
         _writeRaw(String.valueOf(f));
         writeValueEnd();
     }
 
     @Override
-    public void writeNumber(BigDecimal dec) throws IOException {
+    public void writeNumber(BigDecimal dec) throws JacksonException {
         if (dec == null) {
             writeNull();
             return;
@@ -558,7 +613,7 @@ final class TomlGenerator extends GeneratorBase {
     }
 
     @Override
-    public void writeNumber(String encodedValue) throws IOException {
+    public void writeNumber(String encodedValue) throws JacksonException {
         if (encodedValue == null) {
             writeNull();
             return;
@@ -570,7 +625,7 @@ final class TomlGenerator extends GeneratorBase {
 
     @Override
     public void writeNull() throws JacksonException {
-        throw new UnsupportedOperationException("Nulls are not supported by TOML");
+        throw _constructWriteException("Nulls are not supported by TOML");
     }
 
     /*
@@ -580,11 +635,11 @@ final class TomlGenerator extends GeneratorBase {
      */
 
     @Override
-    protected void _verifyValueWrite(String typeMsg) throws IOException {
+    protected void _verifyValueWrite(String typeMsg) throws JacksonException {
         _verifyValueWrite(typeMsg, true);
     }
 
-    protected void _verifyValueWrite(String typeMsg, boolean forceMaterializeKey) throws IOException {
+    protected void _verifyValueWrite(String typeMsg, boolean forceMaterializeKey) throws JacksonException {
         // check that name/value cadence works
         if (!_streamWriteContext.writeValue()) {
             _reportError("Cannot " + typeMsg + ", expecting a property name");
@@ -606,12 +661,12 @@ final class TomlGenerator extends GeneratorBase {
         }
     }
 
-    private void writeCurrentPath() throws IOException {
+    private void writeCurrentPath() {
         _writeRaw(_basePath);
         _writeRaw(" = ");
     }
 
-    private void writeValueEnd() throws IOException {
+    private void writeValueEnd() {
         if (!_streamWriteContext._inline) {
             writeRaw('\n');
         }
@@ -623,7 +678,7 @@ final class TomlGenerator extends GeneratorBase {
     /**********************************************************************
      */
 
-    private void _appendPropertyName(StringBuilder path, String name) throws IOException {
+    private void _appendPropertyName(StringBuilder path, String name) {
         int cat = StringOutputUtil.categorize(name) & StringOutputUtil.MASK_SIMPLE_KEY;
         if ((cat & StringOutputUtil.UNQUOTED_KEY) != 0) {
             path.append(name);
@@ -644,12 +699,12 @@ final class TomlGenerator extends GeneratorBase {
             }
             path.append('"');
         } else {
-            throw new TomlStreamWriteException("Key contains unsupported characters", this);
+            throw _constructWriteException("Key contains unsupported characters");
         }
         // NOTE: we do NOT yet write the key; wait until we have value; just append to path
     }
 
-    private void _writeStringImpl(int categoryMask, String name) throws IOException {
+    private void _writeStringImpl(int categoryMask, String name) {
         int cat = StringOutputUtil.categorize(name) & categoryMask;
         if ((cat & StringOutputUtil.UNQUOTED_KEY) != 0) {
             _writeRaw(name);
@@ -674,11 +729,11 @@ final class TomlGenerator extends GeneratorBase {
             }
             _writeRaw('"');
         } else {
-            throw new TomlStreamWriteException("Key contains unsupported characters", this);
+            throw _constructWriteException("Key contains unsupported characters");
         }
     }
 
-    private void _writeStringImpl(int categoryMask, char[] text, int offset, int len) throws IOException {
+    private void _writeStringImpl(int categoryMask, char[] text, int offset, int len) {
         int cat = StringOutputUtil.categorize(text, offset, len) & categoryMask;
         if ((cat & StringOutputUtil.UNQUOTED_KEY) != 0) {
             _writeRaw(text, offset, len);
@@ -703,7 +758,7 @@ final class TomlGenerator extends GeneratorBase {
             }
             _writeRaw('"');
         } else {
-            throw new TomlStreamWriteException("Key contains unsupported characters", this);
+            throw _constructWriteException("Key contains unsupported characters");
         }
     }
 
@@ -714,7 +769,7 @@ final class TomlGenerator extends GeneratorBase {
      */
 
     @Override
-    public void writePOJO(Object value) throws IOException {
+    public void writePOJO(Object value) throws JacksonException {
         if (value == null) {
             // important: call method that does check value write:
             writeNull();
@@ -727,7 +782,7 @@ final class TomlGenerator extends GeneratorBase {
             _writeRaw(value.toString());
             writeValueEnd();
         } else {
-            _objectCodec.writeValue(this, value);
+            _objectWriteContext.writeValue(this, value);
         }
     }
 }

@@ -1,6 +1,5 @@
 package com.fasterxml.jackson.dataformat.toml;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,7 +27,7 @@ public class ParserTest {
             .enable(JsonReadFeature.ALLOW_NON_NUMERIC_NUMBERS)
             .build();
 
-    private ObjectNode json(@Language("json") String json) throws JsonProcessingException {
+    private ObjectNode json(@Language("json") String json) {
         return (ObjectNode) jsonMapper.readTree(json);
     }
 
@@ -943,10 +942,10 @@ public class ParserTest {
 
         Assert.assertEquals(
                 JsonNodeFactory.instance.objectNode()
-                        .<ObjectNode>set("odt1", JsonNodeFactory.instance.pojoNode(OffsetDateTime.parse("1979-05-27T07:32:00Z")))
-                        .<ObjectNode>set("odt2", JsonNodeFactory.instance.pojoNode(OffsetDateTime.parse("1979-05-27T00:32:00-07:00")))
-                        .<ObjectNode>set("odt3", JsonNodeFactory.instance.pojoNode(OffsetDateTime.parse("1979-05-27T00:32:00.999999-07:00")))
-                        .<ObjectNode>set("odt4", JsonNodeFactory.instance.pojoNode(OffsetDateTime.parse("1979-05-27T07:32:00Z"))),
+                        .set("odt1", JsonNodeFactory.instance.pojoNode(OffsetDateTime.parse("1979-05-27T07:32:00Z")))
+                        .set("odt2", JsonNodeFactory.instance.pojoNode(OffsetDateTime.parse("1979-05-27T00:32:00-07:00")))
+                        .set("odt3", JsonNodeFactory.instance.pojoNode(OffsetDateTime.parse("1979-05-27T00:32:00.999999-07:00")))
+                        .set("odt4", JsonNodeFactory.instance.pojoNode(OffsetDateTime.parse("1979-05-27T07:32:00Z"))),
                 toml(options,
                         "odt1 = 1979-05-27T07:32:00Z\n" +
                                 "odt2 = 1979-05-27T00:32:00-07:00\n" +
@@ -955,8 +954,8 @@ public class ParserTest {
         );
         Assert.assertEquals(
                 JsonNodeFactory.instance.objectNode()
-                        .<ObjectNode>set("ldt1", JsonNodeFactory.instance.pojoNode(LocalDateTime.parse("1979-05-27T07:32:00")))
-                        .<ObjectNode>set("ldt2", JsonNodeFactory.instance.pojoNode(LocalDateTime.parse("1979-05-27T00:32:00.999999"))),
+                        .set("ldt1", JsonNodeFactory.instance.pojoNode(LocalDateTime.parse("1979-05-27T07:32:00")))
+                        .set("ldt2", JsonNodeFactory.instance.pojoNode(LocalDateTime.parse("1979-05-27T00:32:00.999999"))),
                 toml(options,
                         "ldt1 = 1979-05-27T07:32:00\n" +
                                 "ldt2 = 1979-05-27T00:32:00.999999")
@@ -968,8 +967,8 @@ public class ParserTest {
         );
         Assert.assertEquals(
                 JsonNodeFactory.instance.objectNode()
-                        .<ObjectNode>set("lt1", JsonNodeFactory.instance.pojoNode(LocalTime.parse("07:32:00")))
-                        .<ObjectNode>set("lt2", JsonNodeFactory.instance.pojoNode(LocalTime.parse("00:32:00.999999"))),
+                        .set("lt1", JsonNodeFactory.instance.pojoNode(LocalTime.parse("07:32:00")))
+                        .set("lt2", JsonNodeFactory.instance.pojoNode(LocalTime.parse("00:32:00.999999"))),
                 toml(options,
                         "lt1 = 07:32:00\n" +
                                 "lt2 = 00:32:00.999999")
